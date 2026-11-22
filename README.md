@@ -6,6 +6,8 @@
 
 **[→ 在线试玩](https://ass1st.github.io/xiangqi-coach/)**（或下载 `index.html` 直接双击）
 
+![单题 · 套题两种模式的界面：左侧棋盘，右侧选模式](./docs/img/xiangqi-demo.png)
+
 ---
 
 ## 为什么做这个
