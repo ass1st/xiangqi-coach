@@ -4,7 +4,7 @@
 
 一个单文件网页原型，零依赖，双击即开。它不是引擎——不给「这步该走哪」的答案，问的是「走这里会进入什么样的棋」。
 
-**[→ 在线试玩](https://ass1st.github.io/xiangqi-coach/)**（或下载 `index.html` 直接双击）
+**[→ 在线试玩](https://assist1st.github.io/xiangqi-coach/)**（或下载 `index.html` 直接双击）
 
 ![单题 · 套题两种模式的界面：左侧棋盘，右侧选模式](./docs/img/xiangqi-demo.png)
 
@@ -88,4 +88,4 @@ LICENSE             MIT
 
 ---
 
-首发于 github.com/ass1st/xiangqi-coach · 2026-11
+首发于 github.com/assist1st/xiangqi-coach · 2026-11
