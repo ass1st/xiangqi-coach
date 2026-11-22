@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>象棋决策训练器 · 单题 / 套题</title>
+<style>
+  :root{
+    --bg:#0d1117;--panel:#161c24;--panel2:#0f141a;--line:#2a3441;
+    --text:#e6edf3;--dim:#8b98a8;--gold:#d9b36c;--acc:#c8ff3d;--warn:#ff8a5c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);padding:20px 18px 46px;max-width:1080px;margin:0 auto;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+  .hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .hd h1{font-size:18px;letter-spacing:.5px}
+  .hd .pid{font-family:ui-monospace,monospace;font-size:10px;color:var(--dim);border:1px solid var(--line);padding:2px 7px;border-radius:4px}
+  .hd .step{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--dim);margin-left:auto}
+  .sub{color:var(--dim);font-size:12px;line-height:1.65;margin:6px 0 14px}
+
+  .wrap{display:grid;grid-template-columns:minmax(280px,410px) 1fr;gap:14px;align-items:start}
+  @media (max-width:820px){.wrap{grid-template-columns:1fr}}
+
+  .boardbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+  #board{width:100%;height:min(56vh,430px);display:block}
+  .boardfoot{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .mini{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--dim);margin-left:auto}
+  .btn{background:transparent;color:var(--text);border:1px solid var(--line);border-radius:7px;
+    padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--acc);color:var(--acc)}
+  .btn.primary{border-color:#3a4a2a;background:#141b12;color:var(--acc)}
+  .btn.primary:hover{border-color:var(--acc)}
+  .btn:disabled{opacity:.35;cursor:not-allowed;border-color:var(--line);color:var(--dim)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .badge{font-size:10.5px;padding:1px 7px;border-radius:4px;border:1px solid #4a4026;color:var(--gold)}
+  .bal{font-size:11.5px;color:var(--dim)}
+  .note{font-size:12px;color:#c2cedb;line-height:1.7;margin-top:7px;white-space:pre-line}
+  .lbl{font-family:ui-monospace,monospace;font-size:9.5px;letter-spacing:1.4px;color:var(--dim);margin:12px 0 6px}
+
+  /* 计时 */
+  .clock{margin-top:10px}
+  .clock .bar{height:5px;background:#1b2330;border-radius:3px;overflow:hidden}
+  .clock .bar i{display:block;height:100%;width:100%;background:var(--gold);transition:width .2s linear}
+  .clock .bar i.hot{background:var(--warn)}
+  .clock .txt{display:flex;justify-content:space-between;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--dim);margin-top:4px}
+  .clock .num{color:var(--text)}
+
+  .opt{display:flex;align-items:center;gap:9px;border:1px solid var(--line);background:var(--panel2);
+    border-radius:9px;padding:10px 12px;margin-bottom:7px;cursor:pointer;transition:border-color .15s,background .15s}
+  .opt:hover{border-color:#4d5c6d;background:#131a22}
+  .opt .k{width:22px;height:22px;border-radius:50%;border:1px solid #4a4026;color:var(--gold);
+    font-family:ui-monospace,monospace;font-size:11px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .opt h4{font-size:13.5px;font-weight:600;letter-spacing:.3px}
+  .opt .sc{margin-left:auto;font-family:ui-monospace,monospace;font-size:12px;color:var(--dim)}
+  .opt .mk{font-size:9.5px;padding:1px 6px;border-radius:4px;border:1px solid #3a4a2a;color:var(--acc);white-space:nowrap}
+  .opt .mk.mineB{border-color:#4a4026;color:var(--gold)}
+  .opt.ok{border-color:#3a4a2a;background:#141b12}
+  .opt.ok .sc{color:var(--acc)}
+  .opt.mine{border-color:#4a4026;background:#141a17}
+  .opt.dim{opacity:.5}
+  .opt.frozen{pointer-events:none}
+
+  .rline{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+  .rline span{font-family:ui-monospace,monospace;font-size:11px;background:#1b2330;padding:3px 7px;border-radius:4px;color:#dbe6f0}
+  .rline span.cap{color:#ffb08a}
+  .lead{font-size:11.5px;color:var(--dim);line-height:1.6}
+  .acts{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap}
+  .tip{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.6}
+  .hide{display:none}
+
+  /* 开始页 */
+  .start{display:grid;gap:12px}
+  .modetab{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:14px 16px;cursor:pointer;transition:.15s}
+  .modetab:hover{border-color:var(--acc)}
+  .modetab h3{font-size:14px;margin-bottom:6px}
+  .modetab p{font-size:11.5px;color:var(--dim);line-height:1.65}
+  .modetab .meta{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--gold);margin-top:8px}
+
+  /* 总评 */
+  .score{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .score b{font-size:30px;font-family:ui-monospace,monospace;letter-spacing:-1px}
+  .score .full{font-size:12px;color:var(--dim)}
+  .verdict{font-size:12.5px;line-height:1.75;margin-top:8px;color:#d5e0ea}
+  .gapbox{margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--panel2)}
+  .gapbox .g1{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--dim)}
+  .gapbox .g2{font-size:12px;margin-top:5px;line-height:1.7}
+  .steps{margin-top:6px}
+  .st{display:grid;grid-template-columns:44px 1fr auto auto;gap:8px;align-items:center;
+    border-bottom:1px solid #1e2732;padding:7px 0;font-size:11.5px}
+  .st .n{font-family:ui-monospace,monospace;color:var(--dim);font-size:10.5px}
+  .st .a{color:#dbe6f0}
+  .st .b{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--dim)}
+  .st .s{font-family:ui-monospace,monospace;font-size:11px;width:44px;text-align:right}
+  .st .s.ok{color:var(--acc)}
+  .st .s.bad{color:var(--warn)}
+  .st .why{grid-column:1 / -1;color:#8b98a8;font-size:11px;line-height:1.6;margin-top:2px}
+  .foot{color:var(--dim);font-size:11px;line-height:1.8;margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <h1>象棋决策训练器</h1>
+  <span class="pid" id="pid">v0.3</span>
+  <span class="step" id="hud"></span>
+</div>
+<p class="sub" id="sub">单题：给你一个局面，四选一，20 秒。套题：进一个体系，一路选到本段走完，再统一给判断。</p>
+
+<div class="wrap">
+  <div class="boardbox">
+    <canvas id="board" width="760" height="820"></canvas>
+    <div class="boardfoot">
+      <button class="btn" id="btn-back">返回</button>
+      <span class="mini" id="ply">—</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <!-- 开始 -->
+    <div id="startView">
+      <div class="lbl">选一个模式</div>
+      <div class="start">
+        <div class="modetab" id="m-single">
+          <h3>单题 · 局面判断</h3>
+          <p>一个局面，四条候选，20 秒内选一条。选完立刻揭晓：分数、这条线走到哪、为什么。适合练某一手的判断。</p>
+          <div class="meta">2 题 · 每题 20 秒 · 无总时限</div>
+        </div>
+        <div class="modetab" id="m-set">
+          <h3>套题 · 体系对攻</h3>
+          <p>从“中炮过河车对屏风马”这条体系进去，一路选到本段走完。中途不揭晓，走完再统一给：整体行棋、优缺点、妙手与臭棋、逐步说明。</p>
+          <div class="meta">4 节点 × 16 手 · 每题 20 秒 + 总时限 8:00</div>
+        </div>
+      </div>
+      <p class="tip">两种模式都开了选项随机顺序；你的每一次选择都会被记下来，最后画成轨迹。</p>
+    </div>
+
+    <!-- 出题 / 揭晓 -->
+    <div id="quizView" class="hide">
+      <div class="row">
+        <span class="badge" id="turnBadge">轮到你走</span>
+        <span class="bal" id="nodeTitle"></span>
+      </div>
+      <p class="note" id="askNote"></p>
+
+      <div class="clock" id="clock">
+        <div class="bar"><i id="qbar"></i></div>
+        <div class="txt"><span id="qlabel">本题</span><span class="num" id="qnum">20.0s</span></div>
+      </div>
+
+      <div class="lbl" id="optsLbl">四选一</div>
+      <div id="opts"></div>
+
+      <div id="revealView" class="hide">
+        <div class="lead" id="vLead"></div>
+        <div class="lbl">这条线走到这里</div>
+        <div class="rline" id="rline"></div>
+        <div class="lbl">为什么</div>
+        <p class="note" id="rwhy"></p>
+        <div class="acts">
+          <button class="btn" id="btn-again">换一条试试</button>
+          <button class="btn primary" id="btn-next">下一步</button>
+        </div>
+        <div class="tip" id="nextTip"></div>
+      </div>
+    </div>
+
+    <!-- 总评 -->
+    <div id="summaryView" class="hide">
+      <div class="row"><span class="badge" id="sumTag">结束</span><span class="bal" id="sumSub"></span></div>
+
+      <div class="score" style="margin-top:10px">
+        <b id="sumScore">0.0</b><span class="full" id="sumFull">／ 满分 0.0</span>
+      </div>
+      <div class="verdict" id="sumVerdict"></div>
+
+      <div class="gapbox">
+        <div class="g1" id="sumGapTop"></div>
+        <div class="g2" id="sumGap"></div>
+      </div>
+
+      <div class="lbl">整体说明</div>
+      <p class="note" id="sumOverall"></p>
+
+      <div class="lbl">逐步说明</div>
+      <div class="steps" id="sumSteps"></div>
+
+      <div class="acts">
+        <button class="btn" id="btn-skip">跳过说明 · 重来</button>
+        <button class="btn primary" id="btn-againAll">再来一次</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="foot">
+  评分为教学示例，正式版由 Pikafish 给出；后续着法是这条线的常见走法，不是唯一走法。<br>
+  套题样张只做了 4 个节点（16 手）；正式版一局 20–30 个节点，走到终局或认输。
+</p>
+
+<script>
+/* ================= 数据 ================= */
+const INIT = [
+  ['車',0,0,'b'],['車',8,0,'b'],['馬',1,0,'b'],['馬',7,0,'b'],
+  ['象',2,0,'b'],['象',6,0,'b'],['士',3,0,'b'],['士',5,0,'b'],
+  ['將',4,0,'b'],['砲',1,2,'b'],['砲',7,2,'b'],
+  ['卒',0,3,'b'],['卒',2,3,'b'],['卒',4,3,'b'],['卒',6,3,'b'],['卒',8,3,'b'],
+  ['俥',0,9,'r'],['俥',8,9,'r'],['傌',1,9,'r'],['傌',7,9,'r'],
+  ['相',2,9,'r'],['相',6,9,'r'],['仕',3,9,'r'],['仕',5,9,'r'],
+  ['帥',4,9,'r'],['炮',1,7,'r'],['炮',7,7,'r'],
+  ['兵',0,6,'r'],['兵',2,6,'r'],['兵',4,6,'r'],['兵',6,6,'r'],['兵',8,6,'r']
+];
+
+const SETUP = [
+  {f:[7,7],t:[4,7]}, {f:[7,0],t:[6,2]}, {f:[7,9],t:[6,7]}, {f:[8,0],t:[7,0]},
+  {f:[8,9],t:[7,9]}, {f:[6,3],t:[6,4]}, {f:[7,9],t:[7,3]}, {f:[1,0],t:[2,2]}
+];
+
+const L1 = [   /* 第 9–12 手 */
+  {f:[2,6],t:[2,5],n:'兵七进一'},
+  {f:[7,2],t:[8,2],n:'炮8平9'},
+  {f:[7,3],t:[6,3],n:'车二平三'},
+  {f:[8,2],t:[8,1],n:'炮9退1'}
+];
+const L2 = [   /* 第 13–16 手 */
+  {f:[1,9],t:[2,7],n:'马八进七'},
+  {f:[3,0],t:[4,1],n:'士4进5'},
+  {f:[4,6],t:[4,5],n:'兵五进一'},
+  {f:[4,3],t:[4,4],n:'卒5进1'}
+];
+const L3 = [   /* 第 17–20 手 */
+  {f:[4,5],t:[4,4],n:'兵五进一（吃卒）',cap:true},
+  {f:[2,2],t:[4,3],n:'马3进5'},
+  {f:[2,7],t:[4,6],n:'马七进五'},
+  {f:[7,0],t:[7,5],n:'车8进5'}
+];
+const L4 = [   /* 第 21–24 手 */
+  {f:[1,7],t:[2,7],n:'炮八平七'},
+  {f:[6,4],t:[6,5],n:'卒7进1'},
+  {f:[6,6],t:[6,5],n:'兵三进一（吃卒）',cap:true},
+  {f:[2,0],t:[4,2],n:'象3进5'}
+];
+
+const NODES = [
+  {
+    id:'N1', no:'第 9 手', title:'中炮过河车 · 黑士未补',
+    start:SETUP, last:{f:[2,2],t:[2,2]},
+    nature:{tag:'阵地偏攻', bal:'红先手约 +0.5',
+      note:'黑方左翼还没解决，红方有明确的施压对象。但四步里走错任何一步，先手就没了。'},
+    opts:[
+      {name:'兵七进一', s:'+0.5', score:0.5, best:true, seq:L1,
+       why:'先挺七兵，四条里唯一既开子力又不丢先手的走法——车和马都有路，黑方想兑车还得先花一手退炮。'},
+      {name:'兵五进一', s:'+0.4', score:0.4,
+       seq:[{f:[4,6],t:[4,5],n:'兵五进一'},{f:[3,0],t:[4,1],n:'士4进5'},
+            {f:[7,3],t:[6,3],n:'车二平三'},{f:[7,2],t:[8,2],n:'炮8平9'}],
+       why:'用一步兵换黑方一手补士，也划算；但中兵一顶，你中路就少一道屏障，黑 卒5进1 反顶会很直接。'},
+      {name:'车二平三', s:'+0.3', score:0.3,
+       seq:[{f:[7,3],t:[6,3],n:'车二平三'},{f:[7,2],t:[8,2],n:'炮8平9'},
+            {f:[1,7],t:[2,7],n:'炮八平七'},{f:[7,0],t:[7,5],n:'车8进5'}],
+       why:'压马的意图没错，但次序反了：先压马再挺兵，等于把挺兵这一手让给黑方来应对。'},
+      {name:'车二退二', s:'−0.2', score:-0.2,
+       seq:[{f:[7,3],t:[7,5],n:'车二退二'},{f:[7,2],t:[8,2],n:'炮8平9'},
+            {f:[7,5],t:[7,3],n:'车二进二'},{f:[3,0],t:[4,1],n:'士4进5'}],
+       why:'反例：退车没解决任何威胁，只是把主动权让出去，还白送黑方一手补士。'}
+    ]
+  },
+  {
+    id:'N2', no:'第 13 手', title:'平炮兑车 · 车压黑马',
+    start:SETUP.concat(L1), last:{f:[8,2],t:[8,1]},
+    nature:{tag:'对攻前夜', bal:'红略优，约 +0.4',
+      note:'红车压在黑 7 路马上，黑炮退到 9 路底线等着平 7 借马腿打车。谁先动中路谁定调。'},
+    opts:[
+      {name:'马八进七', s:'+0.4', score:0.4, best:true, seq:L2,
+       why:'先出左马，把中兵护住，再挺中兵就有底气。这是这条体系的标准次序——马先到位，兵才敢顶。'},
+      {name:'兵五进一', s:'+0.3', score:0.3,
+       seq:[{f:[4,6],t:[4,5],n:'兵五进一'},{f:[3,0],t:[4,1],n:'士4进5'},
+            {f:[4,5],t:[4,4],n:'兵五进一'},{f:[4,3],t:[4,4],n:'卒5进1（吃兵）',cap:true}],
+       why:'中兵先顶也行，可是马还没出来，中兵没人护，黑 卒5进1 一顶你这兵就悬了。'},
+      {name:'车三平四', s:'+0.1', score:0.1,
+       seq:[{f:[6,3],t:[5,3],n:'车三平四'},{f:[3,0],t:[4,1],n:'士4进5'},
+            {f:[1,9],t:[2,7],n:'马八进七'},{f:[7,0],t:[7,5],n:'车8进5'}],
+       why:'车先让开，等于自己撤掉了对黑马的威胁；黑方补士、巡河都很从容。'},
+      {name:'炮八平七', s:'0.0', score:0.0,
+       seq:[{f:[1,7],t:[2,7],n:'炮八平七'},{f:[3,0],t:[4,1],n:'士4进5'},
+            {f:[6,3],t:[5,3],n:'车三平四'},{f:[7,0],t:[7,5],n:'车8进5'}],
+       why:'炮转七路是后面的事，现在走它等于空一手：黑方补完士，阵型先合上了。'}
+    ]
+  },
+  {
+    id:'N3', no:'第 17 手', title:'中路撞上 · 吃还是不吃',
+    start:SETUP.concat(L1, L2), last:{f:[4,3],t:[4,4]},
+    nature:{tag:'对攻', bal:'大致均势，红稍主动',
+      note:'黑 5 卒顶到你的中兵面前，吃与不吃是一个选择：吃了开中路，不吃就一直僵着。'},
+    opts:[
+      {name:'兵五进一（吃卒）', s:'+0.4', score:0.4, best:true, seq:L3,
+       why:'吃掉它，中路撞开一个口子，接着 马七进五 补上去——这一步开始，你的马才有中路落点。'},
+      {name:'马七进五', s:'+0.3', score:0.3,
+       seq:[{f:[2,7],t:[4,6],n:'马七进五'},{f:[2,2],t:[4,3],n:'马3进5'},
+            {f:[4,5],t:[4,4],n:'兵五进一（吃卒）',cap:true},{f:[7,0],t:[7,5],n:'车8进5'}],
+       why:'先把马跳上去也成立，但兵还杵在那儿，等于把“吃不吃”的问题留到下一手，多花一步。'},
+      {name:'车三平四', s:'+0.1', score:0.1,
+       seq:[{f:[6,3],t:[5,3],n:'车三平四'},{f:[2,2],t:[4,3],n:'马3进5'},
+            {f:[4,5],t:[4,4],n:'兵五进一（吃卒）',cap:true},{f:[7,0],t:[7,5],n:'车8进5'}],
+       why:'车一让，黑马就顺势跳到中路；中路这一撞你先让了半步，后面只能跟着走。'},
+      {name:'炮八平七', s:'0.0', score:0.0,
+       seq:[{f:[1,7],t:[2,7],n:'炮八平七'},{f:[2,2],t:[4,3],n:'马3进5'},
+            {f:[4,5],t:[4,4],n:'兵五进一（吃卒）',cap:true},{f:[7,0],t:[7,5],n:'车8进5'}],
+       why:'中路正撞着，你去动侧翼的炮，黑方从容把马跳上来——这一手等于没下。'}
+    ]
+  },
+  {
+    id:'N4', no:'第 21 手', title:'马进中路 · 侧翼定型',
+    start:SETUP.concat(L1, L2, L3), last:{f:[7,0],t:[7,5]},
+    nature:{tag:'阵地', bal:'红先手尚在，约 +0.3',
+      note:'你马已在五路，黑车巡河顶住兵线。现在该把侧翼的炮和马位定下来，而不是继续抢。'},
+    opts:[
+      {name:'炮八平七', s:'+0.3', score:0.3, best:true, seq:L4,
+       why:'炮转七路，和七兵、三路车排到一条线上，下一步才有 兵七进一、炮七进四 这些手段。'},
+      {name:'兵三进一', s:'+0.2', score:0.2,
+       seq:[{f:[6,6],t:[6,5],n:'兵三进一'},{f:[6,4],t:[6,5],n:'卒7进1（吃兵）',cap:true},
+            {f:[1,7],t:[2,7],n:'炮八平七'},{f:[2,0],t:[4,2],n:'象3进5'}],
+       why:'三兵一进，黑 7 卒直接顶上来吃掉；你等于白送一个兵，只为把马路开一格。'},
+      {name:'车三平四', s:'+0.1', score:0.1,
+       seq:[{f:[6,3],t:[5,3],n:'车三平四'},{f:[6,4],t:[6,5],n:'卒7进1'},
+            {f:[1,7],t:[2,7],n:'炮八平七'},{f:[2,0],t:[4,2],n:'象3进5'}],
+       why:'车再让就离战场更远；黑 7 卒一进，你的三路兵线先被压住。'},
+      {name:'炮五平七', s:'0.0', score:0.0, cap:true,
+       seq:[{f:[4,7],t:[2,7],n:'炮五平七'},{f:[6,4],t:[6,5],n:'卒7进1'},
+            {f:[6,6],t:[6,5],n:'兵三进一（吃卒）',cap:true},{f:[2,0],t:[4,2],n:'象3进5'}],
+       why:'两个炮都挤到七路，另一只炮就没了落点；炮位重叠，后面换不出子。'}
+    ]
+  }
+];
+
+/* ================= 状态 ================= */
+let mode = 'single';          // single | set
+let idx = 0;                  // 当前节点
+let order = [];               // 打乱后的选项顺序
+let chosenIdx = -1;
+let phase = 'ask';
+let traj = [];                // 每一次选择
+let runStart = 0;
+
+let pieces = [], SNAP = [], lastMove = null, animTimer = null, liveArrow = null;
+let qTimer = null, qLeft = 0, tTimer = null, tLeft = 0;
+
+const Q_SEC = 20, TOTAL_SEC = 480;
+const clone = a => a.map(p => p.slice());
+const node = () => NODES[idx];
+const letters = ['A','B','C','D','E','F'];
+
+function shuffle(a){
+  const r = a.slice();
+  for(let i=r.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [r[i],r[j]] = [r[j],r[i]]; }
+  return r;
+}
+
+function applyMove(m){
+  const i = pieces.findIndex(p => p[1]===m.f[0] && p[2]===m.f[1]);
+  if(i < 0) return false;
+  const c = pieces.findIndex(p => p[1]===m.t[0] && p[2]===m.t[1]);
+  if(c >= 0) pieces.splice(c,1);
+  const j = pieces.findIndex(p => p[1]===m.f[0] && p[2]===m.f[1]);
+  pieces[j][1] = m.t[0]; pieces[j][2] = m.t[1];
+  lastMove = {f:m.f, t:m.t};
+  return true;
+}
+
+function build(){
+  if(animTimer){ clearTimeout(animTimer); animTimer = null; }
+  pieces = clone(INIT);
+  node().start.forEach(m => applyMove(m));
+  SNAP = clone(pieces);
+  lastMove = node().last;
+  liveArrow = null;
+}
+
+/* ================= 绘制 ================= */
+function fit(cv){
+  const r = cv.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  cv.width = Math.round(r.width*dpr); cv.height = Math.round(r.height*dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx, w:r.width, h:r.height};
+}
+
+function draw(){
+  const cv = document.getElementById('board');
+  const r0 = cv.getBoundingClientRect();
+  if(r0.width < 20 || r0.height < 20) return;
+  const {ctx,w,h} = fit(cv);
+  const m = 16;
+  const cell = Math.min((w-2*m)/8, (h-2*m)/9);
+  if(cell <= 0) return;
+  const ox = (w-cell*8)/2, oy = (h-cell*9)/2;
+  const px = c => ox + c*cell, py = r => oy + r*cell;
+
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#e8d6b3';
+  ctx.fillRect(ox-cell*0.7, oy-cell*0.7, cell*9.4, cell*10.4);
+
+  ctx.strokeStyle = '#8a6a45'; ctx.lineWidth = 1;
+  for(let r=0;r<10;r++){ ctx.beginPath(); ctx.moveTo(px(0),py(r)); ctx.lineTo(px(8),py(r)); ctx.stroke(); }
+  for(let c=0;c<9;c++){
+    if(c===0||c===8){ ctx.beginPath(); ctx.moveTo(px(c),py(0)); ctx.lineTo(px(c),py(9)); ctx.stroke(); }
+    else{
+      ctx.beginPath(); ctx.moveTo(px(c),py(0)); ctx.lineTo(px(c),py(4)); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px(c),py(5)); ctx.lineTo(px(c),py(9)); ctx.stroke();
+    }
+  }
+  [[3,0,5,2],[5,0,3,2],[3,7,5,9],[5,7,3,9]].forEach(([a,b,c,d])=>{
+    ctx.beginPath(); ctx.moveTo(px(a),py(b)); ctx.lineTo(px(c),py(d)); ctx.stroke();
+  });
+
+  ctx.fillStyle = 'rgba(150,112,68,.6)';
+  ctx.font = `${Math.max(10, cell*0.24)}px "Songti SC","SimSun",serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('楚  河', px(2), py(4.5));
+  ctx.fillText('汉  界', px(6), py(4.5));
+
+  if(lastMove){
+    ctx.strokeStyle = 'rgba(217,179,108,.9)'; ctx.lineWidth = 2;
+    [lastMove.f,lastMove.t].forEach(([x,y])=>{
+      ctx.strokeRect(px(x)-cell*0.41, py(y)-cell*0.41, cell*0.82, cell*0.82);
+    });
+  }
+
+  pieces.forEach(([ch,x,y,side])=>{
+    const cx=px(x), cy=py(y), R=cell*0.41;
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
+    ctx.fillStyle='#f6ecd8'; ctx.fill();
+    ctx.strokeStyle='#9c7a52'; ctx.lineWidth=1.4; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx,cy,R*0.86,0,Math.PI*2);
+    ctx.strokeStyle='rgba(156,122,82,.5)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle = side==='r' ? '#b3261e' : '#2b2b2b';
+    ctx.font = `700 ${cell*0.5}px "Songti SC","SimSun","STSong",serif`;
+    ctx.fillText(ch,cx,cy+cell*0.02);
+  });
+
+  if(phase === 'ask'){
+    order.forEach((o,i)=>{
+      const a = o.seq[0];
+      const x1=px(a.f[0]), y1=py(a.f[1]), x2=px(a.t[0]), y2=py(a.t[1]);
+      const ang = Math.atan2(y2-y1, x2-x1);
+      const len = Math.hypot(x2-x1, y2-y1);
+      ctx.strokeStyle = '#d9b36c'; ctx.globalAlpha = 0.7; ctx.lineWidth = 2;
+      const sx = x1 + Math.cos(ang)*cell*0.30, sy = y1 + Math.sin(ang)*cell*0.30;
+      const ex = x2 - Math.cos(ang)*cell*0.30, ey = y2 - Math.sin(ang)*cell*0.30;
+      if(len > cell*0.6){
+        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ex,ey);
+        ctx.lineTo(ex - Math.cos(ang-0.4)*cell*0.24, ey - Math.sin(ang-0.4)*cell*0.24);
+        ctx.lineTo(ex - Math.cos(ang+0.4)*cell*0.24, ey - Math.sin(ang+0.4)*cell*0.24);
+        ctx.closePath(); ctx.fillStyle = '#d9b36c'; ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(x2,y2,cell*0.30,0,Math.PI*2);
+      ctx.setLineDash([4,4]); ctx.globalAlpha = 0.5; ctx.strokeStyle = '#d9b36c';
+      ctx.lineWidth = 1.6; ctx.stroke(); ctx.setLineDash([]);
+
+      const mx=(x1+x2)/2, my=(y1+y2)/2;
+      const nx=-Math.sin(ang), ny=Math.cos(ang);
+      const bx = mx + nx*cell*0.33, by = my + ny*cell*0.33;
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(bx,by,cell*0.19,0,Math.PI*2);
+      ctx.fillStyle = '#d9b36c'; ctx.fill();
+      ctx.fillStyle = '#0d1117'; ctx.font = `700 ${cell*0.21}px ui-monospace,monospace`;
+      ctx.fillText(letters[i], bx, by+cell*0.005);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  if(liveArrow){
+    const {f,t,color} = liveArrow;
+    const x1=px(f[0]), y1=py(f[1]), x2=px(t[0]), y2=py(t[1]);
+    const ang = Math.atan2(y2-y1, x2-x1);
+    ctx.strokeStyle = color; ctx.globalAlpha = 0.95; ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(x1 + Math.cos(ang)*cell*0.32, y1 + Math.sin(ang)*cell*0.32);
+    ctx.lineTo(x2 - Math.cos(ang)*cell*0.32, y2 - Math.sin(ang)*cell*0.32);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ================= 选项列表 ================= */
+function renderOpts(){
+  const box = document.getElementById('opts');
+  box.innerHTML = '';
+  order.forEach((o,i)=>{
+    const d = document.createElement('div');
+    let cls = 'opt';
+    if(phase !== 'ask'){
+      cls += ' frozen';
+      if(o.best) cls += ' ok';
+      if(i === chosenIdx && !o.best) cls += ' mine';
+      if(!o.best && i !== chosenIdx) cls += ' dim';
+    }
+    d.className = cls;
+    if(phase === 'ask'){
+      d.innerHTML = `<span class="k">${letters[i]}</span><h4>${o.name}</h4>`;
+      d.onclick = ()=>choose(i);
+    }else{
+      let mk = '';
+      if(o.best) mk += `<span class="mk">✓ 最佳</span>`;
+      if(i === chosenIdx && !o.best) mk += `<span class="mk mineB">你选的</span>`;
+      d.innerHTML = `<span class="k">${letters[i]}</span><h4>${o.name}</h4><span class="sc">${o.s}</span>${mk}`;
+    }
+    box.appendChild(d);
+  });
+}
+
+/* ================= 计时 ================= */
+function fmt(s){
+  const m = Math.floor(s/60), ss = Math.floor(s%60);
+  return m + ':' + String(ss).padStart(2,'0');
+}
+function startQ(){
+  stopQ();
+  qLeft = Q_SEC;
+  const bar = document.getElementById('qbar');
+  document.getElementById('qnum').textContent = qLeft.toFixed(1) + 's';
+  bar.style.width = '100%'; bar.classList.remove('hot');
+  qTimer = setInterval(()=>{
+    qLeft -= 0.1;
+    if(qLeft <= 0){ qLeft = 0; stopQ(); timeout(); return; }
+    updateTotalLabel();
+    bar.style.width = (qLeft/Q_SEC*100) + '%';
+    if(qLeft <= 6) bar.classList.add('hot');
+  }, 100);
+}
+function stopQ(){ if(qTimer){ clearInterval(qTimer); qTimer = null; } }
+
+function startTotal(){
+  stopTotal();
+  if(mode !== 'set'){ document.getElementById('clock').classList.remove('hide'); return; }
+  tLeft = TOTAL_SEC;
+  document.getElementById('qlabel').textContent = '本题 / 总';
+  updateTotalLabel();
+  tTimer = setInterval(()=>{
+    tLeft -= 0.2;
+    if(tLeft <= 0){ tLeft = 0; stopTotal(); finish(true); return; }
+    updateTotalLabel();
+  }, 200);
+}
+function updateTotalLabel(){
+  const el = document.getElementById('qnum');
+  if(mode === 'set'){
+    el.textContent = qLeft.toFixed(1) + 's ／ 总 ' + fmt(tLeft);
+  }else{
+    el.textContent = qLeft.toFixed(1) + 's';
+  }
+}
+function stopTotal(){ if(tTimer){ clearInterval(tTimer); tTimer = null; } }
+
+/* ================= 开始 / 出题 ================= */
+function startRun(m){
+  mode = m; idx = 0; traj = []; runStart = Date.now();
+  document.getElementById('startView').classList.add('hide');
+  document.getElementById('summaryView').classList.add('hide');
+  document.getElementById('quizView').classList.remove('hide');
+  document.getElementById('pid').textContent = (m === 'set' ? '套题' : '单题');
+  if(m === 'set'){
+    document.getElementById('clock').classList.remove('hide');
+    startTotal();
+  }else{
+    document.getElementById('qlabel').textContent = '本题';
+  }
+  ask();
+}
+
+function ask(){
+  phase = 'ask'; chosenIdx = -1;
+  order = shuffle(node().opts);
+  build();
+  document.getElementById('hud').textContent = (mode==='set')
+    ? '节点 ' + (idx+1) + ' / ' + NODES.length
+    : '第 ' + (idx+1) + ' / 2 题';
+  document.getElementById('turnBadge').textContent = '轮到你走 · ' + node().no;
+  document.getElementById('nodeTitle').textContent = node().title;
+  document.getElementById('askNote').innerHTML = (mode==='set')
+    ? '套题按主线走：选错不会把你带出这条线，只会记在你的成绩里。'
+    : '棋盘上四个字母就是四条候选，<b>先不告诉你好坏</b>——选一条。';
+  document.getElementById('optsLbl').textContent = '四选一 · 20 秒';
+  document.getElementById('revealView').classList.add('hide');
+  document.getElementById('ply').textContent = node().no + ' · 红先';
+  renderOpts();
+  draw();
+  startQ();
+  updateTotalLabel();
+}
+
+/* ================= 选择 ================= */
+function choose(i){
+  if(phase !== 'ask') return;
+  stopQ();
+  chosenIdx = i;
+  const o = order[i];
+  const left = qLeft;
+  traj.push({
+    node: idx, name: o.name, best: o.best, score: o.score,
+    why: o.why, ms: Math.round((Q_SEC - left)*1000), timedOut: false
+  });
+
+  phase = 'run';
+  [...document.querySelectorAll('.opt')].forEach((el,k)=>{
+    el.classList.add(k === i ? 'mine' : 'dim');
+    el.onclick = null;
+  });
+
+  if(mode === 'set'){
+    // 套题：走主线，快速过 4 手
+    const seq = node().opts.find(x=>x.best).seq;
+    playSeq(seq, 320, ()=>{
+      if(idx < NODES.length - 1){ idx++; ask(); }
+      else finish(false);
+    });
+  }else{
+    playSeq(o.seq, 560, ()=>reveal(i));
+  }
+}
+
+function timeout(){
+  if(phase !== 'ask') return;
+  phase = 'run';
+  traj.push({node:idx, name:'（超时未选）', best:false, score:0, why:'超过 20 秒没有落子。', ms:20000, timedOut:true});
+  [...document.querySelectorAll('.opt')].forEach(el=>{ el.onclick = null; el.classList.add('dim'); });
+  if(mode === 'set'){
+    const seq = node().opts.find(x=>x.best).seq;
+    playSeq(seq, 260, ()=>{
+      if(idx < NODES.length - 1){ idx++; ask(); } else finish(false);
+    });
+  }else{
+    const b = node().opts.find(x=>x.best);
+    chosenIdx = order.indexOf(b);
+    playSeq(b.seq, 480, ()=>reveal(chosenIdx));
+  }
+}
+
+function playSeq(seq, gap, done){
+  pieces = clone(SNAP); lastMove = node().last; draw();
+  let k = 0;
+  const step = ()=>{
+    if(k >= seq.length){ liveArrow = null; draw(); done(); return; }
+    applyMove(seq[k]);
+    liveArrow = {f:seq[k].f, t:seq[k].t, color:'#c8ff3d'};
+    k++;
+    draw();
+    animTimer = setTimeout(step, gap);
+  };
+  animTimer = setTimeout(step, 260);
+}
+
+/* ================= 单题揭晓 ================= */
+function reveal(i){
+  phase = 'reveal';
+  const o = order[i];
+  const b = node().opts.find(x=>x.best);
+  const isBest = !!o.best;
+
+  document.getElementById('askNote').innerHTML = '揭晓。四个选项的分都在下面，最佳带 ✓，你选的标在行尾。';
+  document.getElementById('optsLbl').textContent = '答案表 · 你选的标在行尾';
+
+  document.getElementById('vLead').textContent = isBest
+    ? '你走的正好是本手最佳：' + b.name + ' ' + b.s
+    : '本手最佳：' + b.name + ' ' + b.s + '　·　你选的这条路，比它低 ' + Math.abs(o.score - b.score).toFixed(1) + ' 分';
+
+  const line = document.getElementById('rline');
+  line.innerHTML = '';
+  o.seq.forEach(s=>{
+    const sp = document.createElement('span');
+    if(s.cap) sp.className = 'cap';
+    sp.textContent = s.n;
+    line.appendChild(sp);
+  });
+  document.getElementById('rwhy').textContent = o.why;
+
+  const nextBtn = document.getElementById('btn-next');
+  const tip = document.getElementById('nextTip');
+  if(idx >= 1){
+    nextBtn.disabled = false; nextBtn.textContent = '看总评';
+    tip.textContent = '两题都做完了。下面给你这一局的总评与轨迹。';
+  }else{
+    nextBtn.disabled = false; nextBtn.textContent = '下一题 · ' + NODES[idx+1].no;
+    tip.textContent = '继续第二个局面。';
+  }
+
+  document.getElementById('revealView').classList.remove('hide');
+  document.getElementById('ply').textContent = node().no + ' · 已揭晓';
+  renderOpts();
+  draw();
+}
+
+/* ================= 收尾总评 ================= */
+function finish(byTime){
+  stopQ(); stopTotal();
+  phase = 'done';
+  const total = traj.reduce((s,x)=>s+x.score,0);
+  const max = traj.length ? traj.reduce((s,x)=>s + (NODES[x.node].opts.find(o=>o.best).score), 0) : 0;
+  const acc = traj.filter(x=>x.best).length;
+  const gap = max - total;
+
+  document.getElementById('quizView').classList.add('hide');
+  document.getElementById('summaryView').classList.remove('hide');
+
+  document.getElementById('sumTag').textContent = mode==='set' ? '套题结束' : '单题结束';
+  document.getElementById('sumSub').textContent = (mode==='set' ? '中炮过河车对屏风马 · 16 手' : '2 个局面')
+    + (byTime ? ' · 总时限到' : '');
+
+  document.getElementById('sumScore').textContent = total.toFixed(1);
+  document.getElementById('sumFull').textContent = '／ 满分 ' + max.toFixed(1);
+
+  let verdict;
+  if(acc === traj.length) verdict = '全部踩在最佳着法上，判断和这条体系的标准走法完全一致。';
+  else if(acc >= traj.length - 1) verdict = '大部分踩在最佳着法上，只有一处偏了半手——偏的那一手就是你现在的短板。';
+  else if(acc >= Math.ceil(traj.length/2)) verdict = '一半左右的判断在线，说明你认得方向，但具体次序还不够稳。';
+  else verdict = '多数手偏离最佳着法，先补“每手的先后次序”，再谈算度。';
+  document.getElementById('sumVerdict').textContent = verdict;
+
+  document.getElementById('sumGapTop').textContent = '现在的情况：得分 ' + total.toFixed(1) + ' / ' + max.toFixed(1)
+    + '　·　踩中最佳 ' + acc + ' / ' + traj.length + ' 手';
+  const pct = max>0 ? (total/max*100) : 0;
+  document.getElementById('sumGap').textContent = gap <= 0
+    ? '与预期差距：0 —— 你走的就是预期本身。'
+    : '与预期差距：' + gap.toFixed(1) + ' 分（做到 ' + pct.toFixed(0) + '%）。按这条体系的标准走法，这 ' + traj.length + ' 手里你至少该拿到 ' + (max*0.8).toFixed(1) + ' 分，才算“跟上主线”。';
+
+  document.getElementById('sumOverall').textContent = (mode==='set')
+    ? '整体行棋：这条线是平炮兑车的标准骨架——红方先挺七兵把车路打开，再用过河车压马；黑方不硬兑，退炮准备借马腿打车。红方的优点是先手清楚、每手都有落点；缺点是右翼一直欠一手，车一旦被赶就要表态。黑方阵型结实，但左车出动慢。'
+    : '整体行棋：两个局面都属于“开局刚过、先手动不动”的节点。判断的关键不是算多深，而是先看谁有明确的施压对象，再决定要不要动中路。';
+
+  // 妙手 / 臭棋
+  const bestPick = traj.reduce((a,b)=> b.score > a.score ? b : a, traj[0]);
+  const worstPick = traj.reduce((a,b)=> b.score < a.score ? b : a, traj[0]);
+  const pickScore = (x)=>{
+    const o = NODES[x.node].opts.find(k=>k.name===x.name);
+    return o ? o.s : x.score.toFixed(1);
+  };
+  document.getElementById('sumOverall').textContent +=
+    '\n\n妙手（这一局你走得最好的一手）：' + NODES[bestPick.node].no + ' ' + bestPick.name + ' ' + pickScore(bestPick) + '。' +
+    '\n臭棋（最差的一手）：' + NODES[worstPick.node].no + ' ' + worstPick.name + ' ' + pickScore(worstPick) + '。';
+
+  const box = document.getElementById('sumSteps');
+  box.innerHTML = '';
+  traj.forEach(x=>{
+    const st = document.createElement('div');
+    st.className = 'st';
+    const bopt = NODES[x.node].opts.find(o=>o.best);
+    const okCls = x.best ? 'ok' : 'bad';
+    st.innerHTML = `<div class="n">${NODES[x.node].no}</div>
+      <div class="a">${x.name}</div>
+      <div class="b">最佳 ${bopt.name} ${bopt.s}</div>
+      <div class="s ${okCls}">${x.score.toFixed(1)}</div>
+      <div class="why">${x.why}</div>`;
+    box.appendChild(st);
+  });
+
+  document.getElementById('ply').textContent = '已结束';
+  document.getElementById('hud').textContent = '';
+  buildEnd();
+  draw();
+}
+
+function buildEnd(){
+  const last = traj.length ? traj[traj.length-1] : null;
+  const n = NODES[last ? last.node : 0];
+  pieces = clone(INIT);
+  n.start.forEach(m => applyMove(m));
+  n.opts.find(o => o.best).seq.forEach(m => applyMove(m));
+  SNAP = clone(pieces); lastMove = null; liveArrow = null;
+}
+
+function build0(){
+  pieces = clone(INIT);
+  (NODES[NODES.length-1].start).forEach(m => applyMove(m));
+  SNAP = clone(pieces); lastMove = null; liveArrow = null;
+}
+
+function buildHome(){
+  pieces = clone(INIT);
+  SNAP = clone(pieces); lastMove = null; liveArrow = null;
+}
+
+/* ================= 按钮 ================= */
+document.getElementById('m-single').onclick = ()=>startRun('single');
+document.getElementById('m-set').onclick = ()=>startRun('set');
+document.getElementById('btn-back').onclick = ()=>{
+  stopQ(); stopTotal();
+  document.getElementById('quizView').classList.add('hide');
+  document.getElementById('summaryView').classList.add('hide');
+  document.getElementById('startView').classList.remove('hide');
+  document.getElementById('pid').textContent = 'v0.3';
+  document.getElementById('hud').textContent = '';
+  phase = 'idle'; buildHome(); draw();
+};
+document.getElementById('btn-again').onclick = ()=>{ idx = idx; ask(); };
+document.getElementById('btn-next').onclick = ()=>{
+  if(idx >= 1){ finish(false); } else { idx++; ask(); }
+};
+document.getElementById('btn-skip').onclick = ()=>startRun(mode);
+document.getElementById('btn-againAll').onclick = ()=>startRun(mode);
+
+let rz = null;
+window.addEventListener('resize', ()=>{ clearTimeout(rz); rz = setTimeout(draw, 180); });
+
+/* 首屏：初始局面 */
+buildHome(); draw();
+</script>
+</body>
+</html>
+
