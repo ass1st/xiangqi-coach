@@ -250,7 +250,7 @@ const L4 = [   /* 第 21–24 手 */
 const NODES = [
   {
     id:'N1', no:'第 9 手', title:'中炮过河车 · 黑士未补',
-    start:SETUP, last:{f:[2,2],t:[2,2]},
+    start:SETUP, last:{f:[1,0],t:[2,2]},
     nature:{tag:'阵地偏攻', bal:'红先手约 +0.5',
       note:'黑方左翼还没解决，红方有明确的施压对象。但四步里走错任何一步，先手就没了。'},
     opts:[
@@ -346,6 +346,8 @@ let chosenIdx = -1;
 let phase = 'ask';
 let traj = [];                // 每一次选择
 let runStart = 0;
+let runToken = 0;             // 轮次令牌：返回/重开时自增，用来作废在飞的动画回调
+let timedOutNow = false;      // 本题是否因超时未选
 
 let pieces = [], SNAP = [], lastMove = null, animTimer = null, liveArrow = null;
 let qTimer = null, qLeft = 0, tTimer = null, tLeft = 0;
@@ -362,6 +364,7 @@ function shuffle(a){
 }
 
 function applyMove(m){
+  if(m.f[0]===m.t[0] && m.f[1]===m.t[1]) return false;   // 空着不合法，直接拒绝
   const i = pieces.findIndex(p => p[1]===m.f[0] && p[2]===m.f[1]);
   if(i < 0) return false;
   const c = pieces.findIndex(p => p[1]===m.t[0] && p[2]===m.t[1]);
@@ -499,7 +502,7 @@ function renderOpts(){
     let cls = 'opt';
     if(phase !== 'ask'){
       cls += ' frozen';
-      if(o.best) cls += ' ok';
+      if(o.best && !timedOutNow) cls += ' ok';
       if(i === chosenIdx && !o.best) cls += ' mine';
       if(!o.best && i !== chosenIdx) cls += ' dim';
     }
@@ -562,6 +565,8 @@ function stopTotal(){ if(tTimer){ clearInterval(tTimer); tTimer = null; } }
 
 /* ================= 开始 / 出题 ================= */
 function startRun(m){
+  runToken++;
+  if(animTimer){ clearTimeout(animTimer); animTimer = null; }
   mode = m; idx = 0; traj = []; runStart = Date.now();
   document.getElementById('startView').classList.add('hide');
   document.getElementById('summaryView').classList.add('hide');
@@ -577,7 +582,7 @@ function startRun(m){
 }
 
 function ask(){
-  phase = 'ask'; chosenIdx = -1;
+  phase = 'ask'; chosenIdx = -1; timedOutNow = false;
   order = shuffle(node().opts);
   build();
   document.getElementById('hud').textContent = (mode==='set')
@@ -604,9 +609,12 @@ function choose(i){
   chosenIdx = i;
   const o = order[i];
   const left = qLeft;
+  // 「换一条试试」是练习：同一节点只第一次作答计分，重答不进满分/踩中率，
+  // 否则反复重试就能把分数刷满，差距归因就废了。
+  const isRetry = traj.some(x => x.node === idx);
   traj.push({
     node: idx, name: o.name, best: o.best, score: o.score,
-    why: o.why, ms: Math.round((Q_SEC - left)*1000), timedOut: false
+    why: o.why, ms: Math.round((Q_SEC - left)*1000), timedOut: false, practice: isRetry
   });
 
   phase = 'run';
@@ -630,7 +638,9 @@ function choose(i){
 function timeout(){
   if(phase !== 'ask') return;
   phase = 'run';
-  traj.push({node:idx, name:'（超时未选）', best:false, score:0, why:'超过 20 秒没有落子。', ms:20000, timedOut:true});
+  const isRetry = traj.some(x => x.node === idx);
+  traj.push({node:idx, name:'（超时未选）', best:false, score:0,
+    why:'超过 ' + Q_SEC + ' 秒没有落子。', ms:Q_SEC*1000, timedOut:true, practice:isRetry});
   [...document.querySelectorAll('.opt')].forEach(el=>{ el.onclick = null; el.classList.add('dim'); });
   if(mode === 'set'){
     const seq = node().opts.find(x=>x.best).seq;
@@ -638,16 +648,20 @@ function timeout(){
       if(idx < NODES.length - 1){ idx++; ask(); } else finish(false);
     });
   }else{
+    // 超时不是「选了最佳」：不标记任何选项为「你选的」，揭晓时如实报告
+    timedOutNow = true;
+    chosenIdx = -1;
     const b = node().opts.find(x=>x.best);
-    chosenIdx = order.indexOf(b);
-    playSeq(b.seq, 480, ()=>reveal(chosenIdx));
+    playSeq(b.seq, 480, ()=>reveal(-1));
   }
 }
 
 function playSeq(seq, gap, done){
+  const token = runToken;               // 本轮令牌：返回/重开后，旧回调自动作废
   pieces = clone(SNAP); lastMove = node().last; draw();
   let k = 0;
   const step = ()=>{
+    if(token !== runToken) return;      // 这一轮已作废，不再推进棋局
     if(k >= seq.length){ liveArrow = null; draw(); done(); return; }
     applyMove(seq[k]);
     liveArrow = {f:seq[k].f, t:seq[k].t, color:'#c8ff3d'};
@@ -661,26 +675,28 @@ function playSeq(seq, gap, done){
 /* ================= 单题揭晓 ================= */
 function reveal(i){
   phase = 'reveal';
-  const o = order[i];
+  const o = i >= 0 ? order[i] : null;     // i < 0 = 超时未选
   const b = node().opts.find(x=>x.best);
-  const isBest = !!o.best;
+  const isBest = !!o && !!o.best;
 
   document.getElementById('askNote').innerHTML = '揭晓。四个选项的分都在下面，最佳带 ✓，你选的标在行尾。';
   document.getElementById('optsLbl').textContent = '答案表 · 你选的标在行尾';
 
-  document.getElementById('vLead').textContent = isBest
+  document.getElementById('vLead').textContent = !o
+    ? '超时未选：' + Q_SEC + ' 秒内没有落子，本手按 0 分记。本手最佳是 ' + b.name + ' ' + b.s
+    : isBest
     ? '你走的正好是本手最佳：' + b.name + ' ' + b.s
     : '本手最佳：' + b.name + ' ' + b.s + '　·　你选的这条路，比它低 ' + Math.abs(o.score - b.score).toFixed(1) + ' 分';
 
   const line = document.getElementById('rline');
   line.innerHTML = '';
-  o.seq.forEach(s=>{
+  (o ? o : b).seq.forEach(s=>{
     const sp = document.createElement('span');
     if(s.cap) sp.className = 'cap';
     sp.textContent = s.n;
     line.appendChild(sp);
   });
-  document.getElementById('rwhy').textContent = o.why;
+  document.getElementById('rwhy').textContent = o ? o.why : b.why;
 
   const nextBtn = document.getElementById('btn-next');
   const tip = document.getElementById('nextTip');
@@ -691,6 +707,8 @@ function reveal(i){
     nextBtn.disabled = false; nextBtn.textContent = '下一题 · ' + NODES[idx+1].no;
     tip.textContent = '继续第二个局面。';
   }
+  const last = traj[traj.length-1];
+  if(last && last.practice) tip.textContent += '（这次是「换一条试试」的重答，按练习处理，不计入得分与满分。）';
 
   document.getElementById('revealView').classList.remove('hide');
   document.getElementById('ply').textContent = node().no + ' · 已揭晓';
@@ -701,10 +719,17 @@ function reveal(i){
 /* ================= 收尾总评 ================= */
 function finish(byTime){
   stopQ(); stopTotal();
+  if(animTimer){ clearTimeout(animTimer); animTimer = null; }
   phase = 'done';
-  const total = traj.reduce((s,x)=>s+x.score,0);
-  const max = traj.length ? traj.reduce((s,x)=>s + (NODES[x.node].opts.find(o=>o.best).score), 0) : 0;
-  const acc = traj.filter(x=>x.best).length;
+  // 只有「每个节点的第一次作答」计分；「换一条试试」的重答算练习，不进满分与踩中率。
+  // 否则重复作答会把满分和踩中率一起刷大，差距归因就失去意义。
+  const scored = traj.filter(x => !x.practice);      // 计分口径（含超时的 0 分）
+  const answered = scored.filter(x => !x.timedOut);   // 真正落过子的
+  const practiceN = traj.length - scored.length;
+  const timeoutN = scored.length - answered.length;
+  const total = scored.reduce((s,x)=>s+x.score,0);
+  const max = scored.length ? scored.reduce((s,x)=>s + (NODES[x.node].opts.find(o=>o.best).score), 0) : 0;
+  const acc = answered.filter(x=>x.best).length;
   const gap = max - total;
 
   document.getElementById('quizView').classList.add('hide');
@@ -718,33 +743,45 @@ function finish(byTime){
   document.getElementById('sumFull').textContent = '／ 满分 ' + max.toFixed(1);
 
   let verdict;
-  if(acc === traj.length) verdict = '全部踩在最佳着法上，判断和这条体系的标准走法完全一致。';
-  else if(acc >= traj.length - 1) verdict = '大部分踩在最佳着法上，只有一处偏了半手——偏的那一手就是你现在的短板。';
-  else if(acc >= Math.ceil(traj.length/2)) verdict = '一半左右的判断在线，说明你认得方向，但具体次序还不够稳。';
+  // 结论只按「真正落过子的那些手」给：超时是「没答」，不是「答错」，
+  // 混在一起会把结论说成「你多数手走偏了」，那是冤枉人。
+  if(!answered.length) verdict = '这次没有落过子（全都超时或只是练习），先把手感练熟再计时。';
+  else if(acc === answered.length) verdict = '全部踩在最佳着法上，判断和这条体系的标准走法完全一致。';
+  else if(acc >= answered.length - 1) verdict = '大部分踩在最佳着法上，只有一处偏了半手——偏的那一手就是你现在的短板。';
+  else if(acc >= Math.ceil(answered.length/2)) verdict = '一半左右的判断在线，说明你认得方向，但具体次序还不够稳。';
   else verdict = '多数手偏离最佳着法，先补“每手的先后次序”，再谈算度。';
+  if(timeoutN) verdict += '（另有 ' + timeoutN + ' 手超时未选，按 0 分记。）';
+  if(practiceN) verdict += '（另有 ' + practiceN + ' 次「换一条试试」的重答，按练习处理，不计入得分。）';
   document.getElementById('sumVerdict').textContent = verdict;
 
+  const hitLine = answered.length
+    ? '踩中最佳 ' + acc + ' / ' + answered.length + ' 手'
+    : '没有落子';
   document.getElementById('sumGapTop').textContent = '现在的情况：得分 ' + total.toFixed(1) + ' / ' + max.toFixed(1)
-    + '　·　踩中最佳 ' + acc + ' / ' + traj.length + ' 手';
+    + '　·　' + hitLine;
   const pct = max>0 ? (total/max*100) : 0;
   document.getElementById('sumGap').textContent = gap <= 0
     ? '与预期差距：0 —— 你走的就是预期本身。'
-    : '与预期差距：' + gap.toFixed(1) + ' 分（做到 ' + pct.toFixed(0) + '%）。按这条体系的标准走法，这 ' + traj.length + ' 手里你至少该拿到 ' + (max*0.8).toFixed(1) + ' 分，才算“跟上主线”。';
+    : '与预期差距：' + gap.toFixed(1) + ' 分（做到 ' + pct.toFixed(0) + '%）。按这条体系的标准走法，这 ' + scored.length + ' 手里你至少该拿到 ' + (max*0.8).toFixed(1) + ' 分，才算“跟上主线”。';
 
   document.getElementById('sumOverall').textContent = (mode==='set')
     ? '整体行棋：这条线是平炮兑车的标准骨架——红方先挺七兵把车路打开，再用过河车压马；黑方不硬兑，退炮准备借马腿打车。红方的优点是先手清楚、每手都有落点；缺点是右翼一直欠一手，车一旦被赶就要表态。黑方阵型结实，但左车出动慢。'
     : '整体行棋：两个局面都属于“开局刚过、先手动不动”的节点。判断的关键不是算多深，而是先看谁有明确的施压对象，再决定要不要动中路。';
 
-  // 妙手 / 臭棋
-  const bestPick = traj.reduce((a,b)=> b.score > a.score ? b : a, traj[0]);
-  const worstPick = traj.reduce((a,b)=> b.score < a.score ? b : a, traj[0]);
+  // 妙手 / 臭棋（只在真正落过子的手里挑；一道题都没做时不能取 undefined.node）
   const pickScore = (x)=>{
     const o = NODES[x.node].opts.find(k=>k.name===x.name);
     return o ? o.s : x.score.toFixed(1);
   };
-  document.getElementById('sumOverall').textContent +=
-    '\n\n妙手（这一局你走得最好的一手）：' + NODES[bestPick.node].no + ' ' + bestPick.name + ' ' + pickScore(bestPick) + '。' +
-    '\n臭棋（最差的一手）：' + NODES[worstPick.node].no + ' ' + worstPick.name + ' ' + pickScore(worstPick) + '。';
+  if(answered.length){
+    const bestPick = answered.reduce((a,b)=> b.score > a.score ? b : a, answered[0]);
+    const worstPick = answered.reduce((a,b)=> b.score < a.score ? b : a, answered[0]);
+    document.getElementById('sumOverall').textContent +=
+      '\n\n妙手（这一局你走得最好的一手）：' + NODES[bestPick.node].no + ' ' + bestPick.name + ' ' + pickScore(bestPick) + '。' +
+      '\n臭棋（最差的一手）：' + NODES[worstPick.node].no + ' ' + worstPick.name + ' ' + pickScore(worstPick) + '。';
+  }else{
+    document.getElementById('sumOverall').textContent += '\n\n本次没有落子，暂不评妙手与臭棋。';
+  }
 
   const box = document.getElementById('sumSteps');
   box.innerHTML = '';
@@ -754,7 +791,7 @@ function finish(byTime){
     const bopt = NODES[x.node].opts.find(o=>o.best);
     const okCls = x.best ? 'ok' : 'bad';
     st.innerHTML = `<div class="n">${NODES[x.node].no}</div>
-      <div class="a">${x.name}</div>
+      <div class="a">${x.name}${x.practice ? '（练习，不计分）' : ''}</div>
       <div class="b">最佳 ${bopt.name} ${bopt.s}</div>
       <div class="s ${okCls}">${x.score.toFixed(1)}</div>
       <div class="why">${x.why}</div>`;
@@ -792,6 +829,8 @@ document.getElementById('m-single').onclick = ()=>startRun('single');
 document.getElementById('m-set').onclick = ()=>startRun('set');
 document.getElementById('btn-back').onclick = ()=>{
   stopQ(); stopTotal();
+  if(animTimer){ clearTimeout(animTimer); animTimer = null; }
+  runToken++;                       // 作废在飞的动画回调，训练不再自己往下跑
   document.getElementById('quizView').classList.add('hide');
   document.getElementById('summaryView').classList.add('hide');
   document.getElementById('startView').classList.remove('hide');
@@ -799,7 +838,7 @@ document.getElementById('btn-back').onclick = ()=>{
   document.getElementById('hud').textContent = '';
   phase = 'idle'; buildHome(); draw();
 };
-document.getElementById('btn-again').onclick = ()=>{ idx = idx; ask(); };
+document.getElementById('btn-again').onclick = ()=>{ ask(); };
 document.getElementById('btn-next').onclick = ()=>{
   if(idx >= 1){ finish(false); } else { idx++; ask(); }
 };
