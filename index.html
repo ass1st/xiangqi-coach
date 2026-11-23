@@ -151,7 +151,7 @@
 
       <div class="clock" id="clock">
         <div class="bar"><i id="qbar"></i></div>
-        <div class="txt"><span id="qlabel">本题</span><span class="num" id="qnum">20.0s</span></div>
+        <div class="txt"><span id="qlabel">剩余</span><span class="num" id="qnum">20.0s</span></div>
       </div>
 
       <div class="lbl" id="optsLbl">四选一</div>
@@ -545,7 +545,7 @@ function startTotal(){
   stopTotal();
   if(mode !== 'set'){ document.getElementById('clock').classList.remove('hide'); return; }
   tLeft = TOTAL_SEC;
-  document.getElementById('qlabel').textContent = '本题 / 总';
+  document.getElementById('qlabel').textContent = '本题剩余 / 总';
   updateTotalLabel();
   tTimer = setInterval(()=>{
     tLeft -= 0.2;
@@ -576,7 +576,7 @@ function startRun(m){
     document.getElementById('clock').classList.remove('hide');
     startTotal();
   }else{
-    document.getElementById('qlabel').textContent = '本题';
+    document.getElementById('qlabel').textContent = '剩余';
   }
   ask();
 }
